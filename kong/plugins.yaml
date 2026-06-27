@@ -78,6 +78,8 @@ plugin: pre-function
 config:
   access:
     - |
+      -- Always drop any client-sent identity first; only the token may set it.
+      kong.service.request.clear_header("X-User-Id")
       local auth = kong.request.get_header("authorization")
       if auth then
         local token = auth:match("Bearer%s+(.+)")

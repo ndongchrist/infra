@@ -57,7 +57,7 @@ metadata:
   namespace: default
   annotations:
     konghq.com/strip-path: "true"
-    konghq.com/plugins: correlation-id,cors,rate-limit,strip-client-user-id
+    konghq.com/plugins: correlation-id,cors,rate-limit,jwt,inject-user-id
 spec:
   ingressClassName: kong
   rules:
@@ -78,7 +78,7 @@ metadata:
   namespace: default
   annotations:
     konghq.com/strip-path: "true"
-    konghq.com/plugins: correlation-id,cors,rate-limit,strip-client-user-id
+    konghq.com/plugins: correlation-id,cors,rate-limit,jwt,inject-user-id
 spec:
   ingressClassName: kong
   rules:

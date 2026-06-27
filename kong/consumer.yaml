@@ -1,0 +1,15 @@
+# Kong consumer representing the auth-service token issuer. Its jwt credential
+# (key = the iss claim auth stamps; secret = shared DJANGO_SECRET_KEY) lets Kong
+# verify HS256 signatures. The credential Secret `storefront-jwt` is provisioned
+# from a SealedSecret (infra/secrets/) so the HMAC secret never sits in Git as
+# plaintext.
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: storefront
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: kong
+username: storefront
+credentials:
+  - storefront-jwt
