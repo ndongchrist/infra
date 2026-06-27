@@ -1,0 +1,93 @@
+# Kong routing. strip-path=true → /catalog/products/ at the edge reaches
+# catalog-service as /products/ (services mount routes without their prefix).
+# payment-service has NO Ingress — it's internal-only (order calls it over
+# ClusterIP, allowed by NetworkPolicy; nothing external can route to it).
+#
+# Plugins applied now: correlation-id, cors, rate-limit, strip-client-user-id.
+# jwt + inject-user-id are added to /cart and /orders in Phase 7 (need the
+# shared signing secret). Until then, protected routes correctly 401 (no
+# injected identity, and client-sent X-User-Id is stripped).
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auth
+  namespace: default
+  annotations:
+    konghq.com/strip-path: "true"
+    konghq.com/plugins: correlation-id,cors,rate-limit,strip-client-user-id
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /auth
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: catalog
+  namespace: default
+  annotations:
+    konghq.com/strip-path: "true"
+    konghq.com/plugins: correlation-id,cors,rate-limit,strip-client-user-id
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /catalog
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: catalog-service
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cart
+  namespace: default
+  annotations:
+    konghq.com/strip-path: "true"
+    konghq.com/plugins: correlation-id,cors,rate-limit,strip-client-user-id
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /cart
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: cart-service
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orders
+  namespace: default
+  annotations:
+    konghq.com/strip-path: "true"
+    konghq.com/plugins: correlation-id,cors,rate-limit,strip-client-user-id
+spec:
+  ingressClassName: kong
+  rules:
+    - http:
+        paths:
+          - path: /orders
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 80

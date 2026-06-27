@@ -1,0 +1,97 @@
+# Kong plugins (KongPlugin CRs). Attached to Ingresses via the
+# konghq.com/plugins annotation. Namespaced to `default` (same ns as the
+# Ingresses/Services they apply to).
+---
+# Generate/propagate a trace id so one request is followable across services.
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: correlation-id
+  namespace: default
+plugin: correlation-id
+config:
+  header_name: X-Correlation-Id
+  generator: uuid
+  echo_downstream: true
+---
+# Explicit CORS allowlist (tighten origins for prod).
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: cors
+  namespace: default
+plugin: cors
+config:
+  origins: ["*"]
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+  headers: ["Authorization", "Content-Type", "X-Correlation-Id"]
+  credentials: true
+  max_age: 3600
+---
+# Per-client rate limit. policy:local for dev; switch to redis for prod (the
+# guide's "backed by Redis").
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: rate-limit
+  namespace: default
+plugin: rate-limiting
+config:
+  minute: 100
+  policy: local
+---
+# Trust boundary: strip any client-sent X-User-Id BEFORE forwarding, so
+# downstream can never be tricked by a spoofed identity header. The verified id
+# is injected from the JWT (see inject-user-id, activated with Phase 7).
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: strip-client-user-id
+  namespace: default
+plugin: request-transformer
+config:
+  remove:
+    headers: ["X-User-Id"]
+---
+# Validate the access token at the edge; reject unauthenticated traffic before
+# it reaches services. Activated in Phase 7 once the shared HMAC secret (the
+# same DJANGO_SECRET_KEY auth signs with) is provisioned as a Sealed Secret +
+# KongConsumer credential. key_claim_name=iss must match a claim auth issues.
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt
+  namespace: default
+plugin: jwt
+config:
+  claims_to_verify: ["exp"]
+---
+# Inject the verified user id from the validated JWT as X-User-Id (runs after
+# the jwt plugin, so the signature is already checked). Uses the bundled
+# serverless `pre-function` plugin. Activated with Phase 7.
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: inject-user-id
+  namespace: default
+plugin: pre-function
+config:
+  access:
+    - |
+      local auth = kong.request.get_header("authorization")
+      if auth then
+        local token = auth:match("Bearer%s+(.+)")
+        if token then
+          local payload = token:match("[^.]+%.([^.]+)")
+          if payload then
+            local rem = #payload % 4
+            if rem > 0 then payload = payload .. string.rep("=", 4 - rem) end
+            local ok, claims = pcall(function()
+              return require("cjson").decode(ngx.decode_base64(payload))
+            end)
+            if ok and claims and claims.user_id then
+              kong.service.request.set_header("X-User-Id", tostring(claims.user_id))
+            end
+          end
+        end
+      end
