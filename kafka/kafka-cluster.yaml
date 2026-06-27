@@ -1,0 +1,61 @@
+# Single-node KRaft Kafka for dev (Strimzi 1.0 / Kafka 4.x — no ZooKeeper).
+# One NodePool with combined controller+broker roles. The prod overlay uses
+# 3 brokers + RF=3; here RF=1 to fit a laptop.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: combined
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ecommerce
+spec:
+  replicas: 1
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 2Gi
+        deleteClaim: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 768Mi
+    limits:
+      memory: 1Gi
+  jvmOptions:
+    "-Xms": "256m"
+    "-Xmx": "512m"
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: ecommerce
+  namespace: kafka
+  # KRaft + node pools are the default (and only) mode in Strimzi 1.0 / Kafka 4.x.
+spec:
+  kafka:
+    version: 4.1.2
+    metadataVersion: 4.1-IV0
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+    config:
+      # Single broker → everything RF=1.
+      offsets.topic.replication.factor: 1
+      transaction.state.log.replication.factor: 1
+      transaction.state.log.min.isr: 1
+      default.replication.factor: 1
+      min.insync.replicas: 1
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}

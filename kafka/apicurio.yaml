@@ -1,0 +1,62 @@
+# Apicurio Registry — versioned, compatibility-checked event schemas.
+# In-memory storage for dev (schemas re-registered from the contracts repo on
+# startup via CI); the prod overlay swaps to the SQL/Kafka storage variant.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apicurio-registry
+  namespace: kafka
+  labels:
+    app.kubernetes.io/name: apicurio-registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apicurio-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apicurio-registry
+    spec:
+      containers:
+        - name: registry
+          image: apicurio/apicurio-registry-mem:2.6.5.Final
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: REGISTRY_APIS_V2_DELETION_ARTIFACT_ENABLED
+              value: "true"
+          readinessProbe:
+            httpGet:
+              path: /apis/registry/v2/system/info
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /apis/registry/v2/system/info
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apicurio-registry
+  namespace: kafka
+  labels:
+    app.kubernetes.io/name: apicurio-registry
+spec:
+  selector:
+    app.kubernetes.io/name: apicurio-registry
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

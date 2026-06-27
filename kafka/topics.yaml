@@ -1,0 +1,63 @@
+# Topics-as-CRDs: version-controlled here, reconciled by the Strimzi Topic
+# Operator. metadata.name uses dashes (k8s-friendly); spec.topicName is the real
+# dotted Kafka topic name. RF=1/partitions=1 for the single-broker dev cluster;
+# the prod overlay bumps these.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: order-created
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ecommerce
+spec:
+  topicName: order.created
+  partitions: 1
+  replicas: 1
+  config:
+    retention.ms: "604800000"   # 7 days
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: payment-succeeded
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ecommerce
+spec:
+  topicName: payment.succeeded
+  partitions: 1
+  replicas: 1
+  config:
+    retention.ms: "604800000"
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: payment-failed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ecommerce
+spec:
+  topicName: payment.failed
+  partitions: 1
+  replicas: 1
+  config:
+    retention.ms: "604800000"
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: order-confirmed
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: ecommerce
+spec:
+  topicName: order.confirmed
+  partitions: 1
+  replicas: 1
+  config:
+    retention.ms: "604800000"
+    cleanup.policy: delete
