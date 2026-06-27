@@ -1,0 +1,184 @@
+# Default-deny + allowlist for the application tier in the `default` namespace.
+#
+# Scope: every policy targets ONLY our Helm-managed pods
+# (app.kubernetes.io/managed-by=Helm) — the 5 services + their relays/consumers.
+# CloudNativePG's Postgres pods (managed-by=cloudnative-pg) are deliberately left
+# unpoliced: the operator needs intricate API-server/instance networking that a
+# naive default-deny breaks. The data tier is protected by Postgres credentials
+# (per-service Sealed Secrets, Phase 7).
+#
+# Communication is allowlisted, not open: a pod can only reach what it's
+# explicitly permitted to. The enforced trust boundary is "who may call whom".
+---
+# 1. Default-deny INGRESS to all our app/worker pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: default
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [auth-service, catalog-service, cart-service, order-service, payment-service]}
+  policyTypes: [Ingress]
+---
+# 2. Default-deny EGRESS from all our app/worker pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: default
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [auth-service, catalog-service, cart-service, order-service, payment-service]}
+  policyTypes: [Egress]
+---
+# 3. Allow DNS egress (else every name lookup fails).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: default
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [auth-service, catalog-service, cart-service, order-service, payment-service]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# 4. Allow egress to Kafka + Apicurio (kafka namespace).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka-egress
+  namespace: default
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [auth-service, catalog-service, cart-service, order-service, payment-service]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka
+      ports:
+        - {protocol: TCP, port: 9092}   # kafka plain
+        - {protocol: TCP, port: 9093}   # kafka tls
+        - {protocol: TCP, port: 8080}   # apicurio
+---
+# 5. Allow egress to the per-service Postgres (CNPG instance pods) on 5432.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-egress
+  namespace: default
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [auth-service, catalog-service, cart-service, order-service, payment-service]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/podRole: instance
+      ports:
+        - {protocol: TCP, port: 5432}
+---
+# 6. Allow egress to API pods (component=api) on the container port — the
+#    client side of the internal REST allowlist.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal-api-egress
+  namespace: default
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [auth-service, catalog-service, cart-service, order-service, payment-service]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+# 7. catalog API may be called by cart and order (server-side allowlist).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-catalog-ingress
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/name, operator: In, values: [cart-service, order-service]}
+              - {key: app.kubernetes.io/component, operator: In, values: [api]}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kong   # Kong → catalog (Phase 7)
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+# 8. payment API may be called by order only (internal; no public route).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-payment-ingress
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: payment-service
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: order-service
+              app.kubernetes.io/component: api
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+# 9. auth / cart / order APIs are reachable from Kong (the edge). payment is NOT
+#    listed here — it has no public route.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-ingress
+  namespace: default
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [auth-service, cart-service, order-service]}
+      - {key: app.kubernetes.io/component, operator: In, values: [api]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kong
+      ports:
+        - {protocol: TCP, port: 8000}
