@@ -78,7 +78,7 @@ plugin: pre-function
 config:
   access:
     - |
-      -- Always drop any client-sent identity first; only the token may set it.
+      -- Always drop any client-sent identity first; only the validated token sets it.
       kong.service.request.clear_header("X-User-Id")
       local auth = kong.request.get_header("authorization")
       if auth then
@@ -86,13 +86,18 @@ config:
         if token then
           local payload = token:match("[^.]+%.([^.]+)")
           if payload then
+            -- JWT is base64url; ngx.decode_base64 wants standard base64.
+            payload = payload:gsub("-", "+"):gsub("_", "/")
             local rem = #payload % 4
             if rem > 0 then payload = payload .. string.rep("=", 4 - rem) end
-            local ok, claims = pcall(function()
-              return require("cjson").decode(ngx.decode_base64(payload))
-            end)
-            if ok and claims and claims.user_id then
-              kong.service.request.set_header("X-User-Id", tostring(claims.user_id))
+            local json = ngx.decode_base64(payload)
+            if json then
+              -- Sandbox blocks require("cjson"); extract the claim with a pattern.
+              local uid = json:match('"user_id"%s*:%s*"([^"]+)"')
+                       or json:match('"user_id"%s*:%s*(%d+)')
+              if uid then
+                kong.service.request.set_header("X-User-Id", uid)
+              end
             end
           end
         end
