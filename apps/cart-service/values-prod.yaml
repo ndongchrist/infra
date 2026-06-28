@@ -1,0 +1,15 @@
+# prod overlay for cart-service.
+image:
+  tag: latest
+replicaCount: 2
+postgres:
+  enabled: true
+  instances: 3
+  storage: 5Gi
+secretName: app-secrets
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+serviceMonitor:
+  enabled: true

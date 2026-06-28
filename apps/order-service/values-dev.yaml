@@ -1,0 +1,11 @@
+# dev overlay for order-service — merged over the chart defaults by the Argo CD
+# Application (Phase 10). CI bumps image.tag to the git SHA on push to main.
+image:
+  tag: latest
+postgres:
+  enabled: true
+  instances: 1
+  storage: 256Mi
+secretName: app-secrets
+serviceMonitor:
+  enabled: false   # enabled in Phase 11 (kube-prometheus-stack)
